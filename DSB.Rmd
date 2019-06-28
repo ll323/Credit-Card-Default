@@ -1,0 +1,503 @@
+---
+title: "DSB"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r}
+#################################### DSB Final Project Team 18 ##############################3
+
+library(ggplot2)
+
+source("DataAnalyticsFunctions.R")
+##Load dataset in h and clean the dataset
+h <- read.csv("UCI_Credit_Card.csv")
+h <- h[,-1]
+
+str(h)
+for(i in c(2:4,6:11,24)){
+  h[,i] <- as.factor(h[,i])
+}
+str(h)
+hwop<- h[,-c(7:11)]
+
+##EDA Visualizations
+ggplot(h, aes(x=as.factor(default.payment.next.month),y=LIMIT_BAL))+geom_boxplot()
+ggplot(h, aes(x=as.factor(default.payment.next.month),fill=drv))+geom_bar(position = "fill")+facet_wrap(~SEX)
+ggplot(h, aes(x=as.factor(default.payment.next.month)))+geom_bar()+facet_wrap(~EDUCATION)
+ggplot(h, aes(x=as.factor(default.payment.next.month),y=AGE))+geom_boxplot()
+ggplot(data=h)+geom_bar(mapping=aes(x=as.factor(default.payment.next.month),fill= SEX), position="fill")
+#Sex, Education and Default Payment status visualizations
+d2 <- ggplot(ccdata2, aes(x=default.payment.next.month),aes(y=stat_count(gender))) + 
+  geom_bar(aes(fill=factor(ccdata2$educationH))) +
+  xlab("Default Payment Status")+ylab("Customer Count") + 
+  facet_wrap(~genderH)+
+  scale_fill_discrete(name="Education")
+#Age, Limit balance and Education visualization
+ggplot(data = subset(ccdata2,!is.na(AGE.bucket)), aes(factor(educationH), (LIMIT_BAL/1000), fill=AGE.bucket)) + 
+  geom_boxplot() +
+  xlab("Education") + 
+  ylab("Balance Limit ( x 1000 NT$)") + 
+  coord_cartesian(ylim = c(0,500)) +
+  scale_fill_brewer(palette = "Accent")
+##Default Payemnt status among people with different limit balances
+ggplot(aes(x = ccdata2$LIMIT_BAL/1000), data = ccdata2) +
+  geom_histogram(aes(fill = ccdata2$default.payment.next.month)) +
+  xlab("Balance Limit x 1000") +
+  ylab("Count") +
+  scale_fill_discrete(name="Default Payment Next Month",
+                      breaks=c(0, 1),
+                      labels=c("No", "Yes")) + xlim(c(0,750))
+
+##Age binning
+p<-bin(h$AGE,nbin =6 )
+p
+##Proportion of defaulters in different age buckets
+myage <- table(h$default.payment.next.month,p) 
+prop.table(myage,2)*100
+##Proportion of defaulters in different education buckets
+my <-table(h$default.payment.next.month,h$EDUCATION)
+prop.table(my,2)*100
+#Payment Status correlation
+pay <- h[,(6:11)]
+corh<-cor(pay)
+corrplot(corh)
+#Bill Amount Correlation
+bill <- h[,(12:17)]
+corb<-cor(bill)
+corrplot(corb)
+
+##Kmeans Clustering
+##Load the same dataset in k and use it for clustering
+k <- read.csv("UCI_Credit_Card.csv") 
+Ssimple <- scale(k[,c(2:6)])
+head(Ssimple)
+kfit <- lapply(1:30, function(k) kmeans(Ssimple,k,nstart=10))
+kaic <- sapply(kfit,kIC)
+kbic  <- sapply(kfit,kIC,"B")
+kHDic  <- sapply(kfit,kIC,"A")
+par(mar=c(1,1,1,1))
+par(mai=c(1,1,1,1))
+plot(kaic, xlab="k (# of clusters)", ylab="IC (Deviance + Penalty)", main=paste("THE ELBOW METHOD"),
+     ylim=range(c(kaic,kbic,kHDic)),
+     type="l", lwd=2)
+#Number of clusters determined by elbow method = 7
+
+##Cluster features and centers
+simple_kmeans <- kmeans(Ssimple,7,nstart=5)
+colorcluster <- 1+simple_kmeans$cluster
+simple_kmeans$centers
+simple_kmeans$size
+simple_kmeans$cluster
+library(cluster)
+clusplot(k,simple_kmeans$cluster,lines=0,color=TRUE,plotchar = FALSE,span=TRUE,main=paste("Clusters"),xlab="X",ylab="Y")
+
+##PCA - Latent features
+pca.h <- prcomp(k, scale=TRUE)
+plot(pca.h,main="PCA: Variance Explained by Factors")
+mtext(side=1, "Factors",  line=1, font=2)
+loadings <- pca.h$rotation[,1:4]
+v<-loadings[order(abs(loadings[,1]), decreasing=TRUE)[1:27],1]
+loadingfit <- lapply(1:27, function(k) ( t(v[1:k])%*%v[1:k] - 3/4 )^2)
+v[1:which.min(loadingfit)]
+v2<-loadings[order(abs(loadings[,2]), decreasing=TRUE)[1:27],2]
+loadingfit <- lapply(1:27, function(k) ( t(v2[1:k])%*%v2[1:k] - 3/4 )^2)
+v2[1:which.min(loadingfit)]
+h$default.payment.next.month
+
+### Causal Analysis ########
+### Causality of different variables ##############
+
+
+#### Causality of SEX ##########
+y <- h$default.payment.next.month
+x <- model.matrix( default.payment.next.month ~ . -SEX, data = h)
+d <- h$SEX
+
+##LASSO
+### Step 1
+## we set penalty level using the theoretical choice
+w <-sd(y)
+lambda.theory <- 2*w*sqrt(log(num.features/0.01)/num.n)
+## call Lasso 
+lassoTheory <- glmnet(x,y,lambda = lambda.theory,family="binomial")
+## get the support
+supp1 <- support(lassoTheory$beta)
+### Step 1 selected
+length(supp1)
+
+colnames(x[,supp1])
+### controls
+###
+### Step 2
+w <-sd(d)
+lambda.theory <- 2*w*sqrt(log(num.features/0.05)/num.n)
+lassoTheory <- glmnet(x,d,lambda = lambda.theory, family ="binomial")
+supp2<-support(lassoTheory$beta)
+### Step 2 selected
+length(supp2)
+### controls
+colnames(x[,supp2])
+###
+### Step 3
+inthemodel <- unique(c(supp1,supp2)) # unique grabs union
+selectdata <- cBind(d,x[,inthemodel]) 
+selectdata <- as.data.frame(as.matrix(selectdata)) # make it a data.frame
+dim(selectdata) ## p about half n
+
+## run a a linear regression of Y on d and all selected
+causal_glm <- glm(y~., data=selectdata, family="binomial")
+## The theory actually says that the standard SE calc for gamma is correct!
+## despite the model selection
+summary(causal_glm)$coef["d",]
+
+######################################
+##### Causality of EDUCATION #######
+
+y <- h$default.payment.next.month
+x <- model.matrix( default.payment.next.month ~ . -EDUCATION, data = h)
+d <- as.factor(h$EDUCATION)
+
+##LASSO
+### Step 1
+## we set penalty level using the theoretical choice
+w <-sd(y)
+lambda.theory <- 2*w*sqrt(log(num.features/0.01)/num.n)
+## call Lasso 
+lassoTheory <- glmnet(x,y,lambda = lambda.theory,family="binomial")
+## get the support
+supp1 <- support(lassoTheory$beta)
+### Step 1 selected
+length(supp1)
+
+colnames(x[,supp1])
+### controls
+###
+### Step 2
+w <-sd(d)
+lambda.theory <- 2*w*sqrt(log(num.features/0.05)/num.n)
+lassoTheory <- glmnet(x,d,lambda = lambda.theory, family ="binomial")
+supp2<-support(lassoTheory$beta)
+### Step 2 selected
+length(supp2)
+### controls
+colnames(x[,supp2])
+###
+### Step 3
+inthemodel <- unique(c(supp1,supp2)) # unique grabs union
+selectdata <- cBind(d,x[,inthemodel]) 
+selectdata <- as.data.frame(as.matrix(selectdata)) # make it a data.frame
+dim(selectdata) ## p about half n
+
+## run a a linear regression of Y on d and all selected
+causal_glm <- glm(y~., data=selectdata, family="binomial")
+## The theory actually says that the standard SE calc for gamma is correct!
+## despite the model selection
+summary(causal_glm)$coef["d",]
+
+####################################
+############### AGE #######
+
+y <- h$default.payment.next.month
+x <- model.matrix( default.payment.next.month ~ . -AGE, data = h)
+d <- h$AGE
+
+##LASSO
+### Step 1
+## we set penalty level using the theoretical choice
+w <-sd(y)
+lambda.theory <- 2*w*sqrt(log(num.features/0.01)/num.n)
+## call Lasso 
+lassoTheory <- glmnet(x,y,lambda = lambda.theory,family="binomial")
+## get the support
+supp1 <- support(lassoTheory$beta)
+### Step 1 selected
+length(supp1)
+
+colnames(x[,supp1])
+### controls
+###
+### Step 2
+w <-sd(d)
+lambda.theory <- 2*w*sqrt(log(num.features/0.05)/num.n)
+lassoTheory <- glmnet(x,d,lambda = lambda.theory, family ="binomial")
+supp2<-support(lassoTheory$beta)
+### Step 2 selected
+length(supp2)
+### controls
+colnames(x[,supp2])
+###
+### Step 3
+inthemodel <- unique(c(supp1,supp2)) # unique grabs union
+selectdata <- cBind(d,x[,inthemodel]) 
+selectdata <- as.data.frame(as.matrix(selectdata)) # make it a data.frame
+dim(selectdata) ## p about half n
+
+## run a a linear regression of Y on d and all selected
+causal_glm <- glm(y~., data=selectdata, family="binomial")
+## The theory actually says that the standard SE calc for gamma is correct!
+## despite the model selection
+summary(causal_glm)$coef["d",]
+
+##############################
+######## MARRIAGE #############
+
+y <- h$default.payment.next.month
+x <- model.matrix( default.payment.next.month ~ . -MARRIAGE, data = h)
+d <- h$MARRIAGE
+
+##LASSO
+### Step 1
+## we set penalty level using the theoretical choice
+w <-sd(y)
+lambda.theory <- 2*w*sqrt(log(num.features/0.01)/num.n)
+## call Lasso 
+lassoTheory <- glmnet(x,y,lambda = lambda.theory,family="binomial")
+## get the support
+supp1 <- support(lassoTheory$beta)
+### Step 1 selected
+length(supp1)
+
+colnames(x[,supp1])
+### controls
+###
+### Step 2
+w <-sd(d)
+lambda.theory <- 2*w*sqrt(log(num.features/0.05)/num.n)
+lassoTheory <- glmnet(x,d,lambda = lambda.theory, family ="binomial")
+supp2<-support(lassoTheory$beta)
+### Step 2 selected
+length(supp2)
+### controls
+colnames(x[,supp2])
+###
+### Step 3
+inthemodel <- unique(c(supp1,supp2)) # unique grabs union
+selectdata <- cBind(d,x[,inthemodel]) 
+selectdata <- as.data.frame(as.matrix(selectdata)) # make it a data.frame
+dim(selectdata) ## p about half n
+
+## run a a linear regression of Y on d and all selected
+causal_glm <- glm(y~., data=selectdata, family="binomial")
+## The theory actually says that the standard SE calc for gamma is correct!
+## despite the model selection
+summary(causal_glm)$coef["d",]
+
+#################
+###############
+####
+
+##Regressions
+#Lasso
+library(glmnet)
+Mx<- model.matrix(default.payment.next.month ~., data=hwop)[,-1]
+My<- hwop$default.payment.next.month 
+lasso <- glmnet(Mx,My,family="binomial")
+lassoCV <- cv.glmnet(Mx,My,family="binomial")
+par(mar=c(1.5,1.5,2,1.5))
+par(mai=c(1.5,1.5,2,1.5))
+plot(lassoCV, main="Fitting Graph for CV Lasso \n \n # of non-zero coefficients  ", xlab = expression(paste("log(",lambda,")")))
+features.min <- support(lasso$beta[,which.min(lassoCV$cvm)])
+length(features.min)
+features.1se <- support(lasso$beta[,which.min( (lassoCV$lambda-lassoCV$lambda.1se)^2)])
+length(features.1se) 
+data.min <- data.frame(Mx[,features.min],My) 
+data.1se <- data.frame(Mx[,features.1se],My) 
+head(data.1se)
+head(data.min)
+
+#Insample R squared and Accuracy values forLogistic, Logistic interaction, classification tree, null and Lasso 
+library(tree)
+library(SDMTools)
+inlogint <- glm(default.payment.next.month~.^2, data=hwop,family="binomial")
+inlog <-glm(default.payment.next.month~., data=hwop,family="binomial")
+inloglasso <- glm(My~., data=data.1se,family="binomial")
+inctree <- tree(default.payment.next.month~., data=hwop)
+inlnull <- glm(default.payment.next.month ~1,data=hwop,family="binomial")
+summary(inlog)
+
+inlogintr <- R2(y=hwop$default.payment.next.month, pred=inlogint$fitted.values,family="binomial" )
+inlogr <- R2(y=hwop$default.payment.next.month, pred=inlog$fitted.values,family="binomial" )
+inloglassor <- R2(y=data.1se$My, pred=inloglasso$fitted.values,family="binomial")
+inctreer <- R2(y=hwop$default.payment.next.month, pred=predict(inctree, newdata=hwop, type="vector")[,2], family="binomial")
+innullr <- R2(y=hwop$default.payment.next.month, pred=inlnull$fitted.values,family="binomial" )
+
+##Accuracy calculated at a threshold value of 0.75
+Acclogint <-accuracy(hwop$default.payment.next.month,inlogint$fitted.values,threshold = 0.75)$prop.correct
+Acclog <- accuracy(hwop$default.payment.next.month, pred=inlog$fitted.values,threshold = 0.75)$prop.correct
+Accloglasso <- accuracy(data.1se$My, pred=inloglasso$fitted.values,threshold = 0.75)$prop.correct
+Accctree <- accuracy(hwop$default.payment.next.month,pred=predict(inctree, newdata=hwop, type="vector")[,2],threshold = 0.75)$prop.correct
+Accnull <- accuracy(hwop$default.payment.next.month, pred=inlnull$fitted.values,threshold = 0.75)$prop.correct
+
+
+##kfold for OOS R squared and Accuracy
+nfold <- 5
+n <- nrow(hwop)
+foldid <- rep(1:nfold,each=ceiling(n/nfold))[sample(1:n)]
+### create an empty dataframe of results to store the OOS R-squared and Accuracy
+OOS <- data.frame(logint=rep(NA,nfold),log=rep(NA,nfold),null=rep(NA,nfold),loglasso=rep(NA,nfold),ctree=rep(NA,nfold))
+Acc <- data.frame(logint=rep(NA,nfold),log=rep(NA,nfold),null=rep(NA,nfold),loglasso=rep(NA,nfold),ctree=rep(NA,nfold))
+### Use a for loop to run through the nfold trails
+for(k in 1:nfold){ 
+  traink <- which(foldid!=k)
+  logint <- glm(default.payment.next.month~.^2, data=hwop,subset=traink,family="binomial")
+  log <-glm(default.payment.next.month~., data=hwop,subset=traink,family="binomial")
+  loglasso <- glm(My~., data=data.1se,family="binomial",subset=traink)
+  ctree <- tree(default.payment.next.month~., data=hwop,subset=traink)
+  lnull <- glm(default.payment.next.month ~1,data=hwop,subset=traink,family="binomial")
+  
+  ## get predictions
+  oologint <- predict(logint, newdata=hwop[-traink,],type="response") 
+  oolog   <- predict(log, newdata=hwop[-traink,],type="response")
+  oologlasso <- predict(loglasso, newdata=data.1se[-traink,],type="response")
+  ooctree <- predict(ctree, newdata=hwop[-traink,],type="vector")
+  oolnull <- predict(lnull, newdata=hwop[-traink,],type="response")
+  
+  ## calculate and log OOS R2 for each fold k
+  OOS$logint[k] <- R2(y=hwop$default.payment.next.month[-traink], pred=oologint,family="binomial" )
+  OOS$log[k] <- R2(y=hwop$default.payment.next.month[-traink], pred=oolog,family="binomial")
+  OOS$ctree[k] <- R2(y=hwop$default.payment.next.month[-traink], pred=ooctree, family="binomial")
+  OOS$loglasso[k] <- R2(y=data.1se$My[-traink], pred=oologlasso,family="binomial")
+  OOS$null[k] <- R2(y=hwop$default.payment.next.month[-traink], pred=oolnull,family="binomial")
+  
+  ##Accuracy for each fold k
+  Acc$logint[k] <-accuracy(hwop$default.payment.next.month[-traink],oologint,threshold = 0.75)$prop.correct
+  Acc$log[k] <- accuracy(hwop$default.payment.next.month[-traink], pred=oolog,threshold = 0.75)$prop.correct
+  Acc$loglasso[k] <- accuracy(data.1se$My[-traink], pred=oologlasso,threshold = 0.75)$prop.correct
+  Acc$ctree[k] <- accuracy(hwop$default.payment.next.month[-traink],pred=ooctree[,2],threshold = 0.75)$prop.correct
+  Acc$null[k] <- accuracy(hwop$default.payment.next.month[-traink], pred=oolnull,threshold = 0.75)$prop.correct
+  
+  ## We will loop this nfold times 
+  ## this will print the progress (iteration that finished)
+  print(paste("Iteration",k,"of",nfold))
+}
+## OOS R- squared matrix for all the different models and fgolds
+colMeans(OOS)
+colMeans(Acc)
+
+m.OOS <- as.matrix(OOS)
+rownames(m.OOS) <- c(1:nfold)
+barplot(t(as.matrix(OOS)), beside=TRUE, legend=TRUE, args.legend=c(xjust=1, yjust=-0.03),
+        ylab= bquote( "Out of Sample " ~ R^2), xlab="Fold", names.arg = c(1:5),ylim=c(-2,0.3))
+
+m.ACC <- as.matrix(Acc)
+rownames(m.ACC) <- c(1:nfold)
+barplot(t(as.matrix(Acc)), beside=TRUE, legend=TRUE, args.legend=c(xjust=1, yjust=-0.01),
+        ylab= bquote( "Out of Sample " ~ Accuracy), xlab="Fold", names.arg = c(1:5),ylim=c(0,1))
+
+
+## ################################ XGBoost 
+## Data balancing using SMOTE method 
+set.seed(1900)
+inTrain <- createDataPartition(y=ccdata_Total$Target, p=0.6, list=F)
+train <- ccdata_Total[inTrain,]
+table(train$Target)
+testcv <- ccdata_Total[-inTrain,]
+inTest <- createDataPartition(y=testcv$Target, p=0.5, list=F)
+test <- testcv[inTest,]
+cv <- testcv[-inTest,]
+rm(inTrain, inTest, testcv)
+
+i <- grep("Target", colnames(train)) # Get index Class column
+train_smote <- SMOTE(Target~., as.data.frame(train),perc.over=2500, perc.under=100)
+table(train_smote$Target)
+
+
+# Back to numeric
+train$Target <- as.numeric(levels(train$Target))[train$Target]
+train_smote$Target <- as.numeric(levels(train_smote$Target))[train_smote$Target]
+
+# As Matrix
+train <- Matrix(as.matrix(train), sparse = TRUE)
+train_smote <- Matrix(as.matrix(train_smote), sparse = TRUE)
+test <- Matrix(as.matrix(test), sparse = TRUE)
+cv <- Matrix(as.matrix(cv), sparse = TRUE)
+
+# Create XGB Matrices
+train_xgb <- xgb.DMatrix(data = train[,-i], label = train[,i])
+train_smote_xgb <- xgb.DMatrix(data = train_smote[,-i], label = train_smote[,i])
+test_xgb <- xgb.DMatrix(data = test[,-i], label = test[,i])
+cv_xgb <- xgb.DMatrix(data = cv[,-i], label = cv[,i])
+
+# Watchlist
+watchlist <- list(train  = train_xgb, cv = cv_xgb)
+
+# set parameters:
+parameters <- list(
+  # General Parameters
+  booster            = "gbtree",          
+  silent             = 0,                 
+  # Booster Parameters
+  eta                = 0.3,               
+  gamma              = 0,                 
+  max_depth          = 6,                 
+  min_child_weight   = 1,                 
+  subsample          = 1,                 
+  colsample_bytree   = 1,                 
+  colsample_bylevel  = 1,                 
+  lambda             = 1,                 
+  alpha              = 0,                 
+  # Task Parameters
+  objective          = "binary:logistic",   
+  eval_metric        = "auc",
+  seed               = 1900               
+)
+
+# Train model
+# Original
+xgb.model <- xgb.train(parameters, train_xgb, nrounds = 50, watchlist)
+
+#Plot:
+melted <- melt(xgb.model$evaluation_log, id.vars="iter")
+ggplot(data=melted, aes(x=iter, y=value, group=variable, color = variable)) + geom_line()
+
+# Smote
+xgb_smote.model <- xgb.train(parameters, train_smote_xgb, nrounds = 50, watchlist)
+
+#Plot:
+melted <- melt(xgb_smote.model$evaluation_log, id.vars="iter")
+ggplot(data=melted, aes(x=iter, y=value, group=variable, color = variable)) + geom_line()
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
