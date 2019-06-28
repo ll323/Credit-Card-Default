@@ -32,8 +32,6 @@ Note that the `echo = FALSE` parameter was added to the code chunk to prevent pr
 
 
 ```{r}
-#################################### DSB Final Project Team 18 ##############################3
-
 library(ggplot2)
 
 source("DataAnalyticsFunctions.R")
